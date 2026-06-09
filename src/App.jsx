@@ -122,7 +122,7 @@ const messages = {
       compressed: "压缩后 348KB",
       done: "压缩完成",
       saved: "已减少 85%",
-      quality: "画质 80%",
+      quality: "画质 100%",
       more: "更多工具",
     },
     sections: {
@@ -240,7 +240,7 @@ const messages = {
       compressed: "Compressed 348KB",
       done: "Compressed",
       saved: "85% saved",
-      quality: "Quality 80%",
+      quality: "Quality 100%",
       more: "More tools",
     },
     sections: {
@@ -415,6 +415,104 @@ function canvasToBlob(canvas, mime, quality) {
   });
 }
 
+const crcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let value = i;
+    for (let j = 0; j < 8; j += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[i] = value >>> 0;
+  }
+  return table;
+})();
+
+function getCrc32(bytes) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc = crcTable[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function writeUint16(view, offset, value) {
+  view.setUint16(offset, value, true);
+}
+
+function writeUint32(view, offset, value) {
+  view.setUint32(offset, value >>> 0, true);
+}
+
+function makeZipPart(size) {
+  const bytes = new Uint8Array(size);
+  return { bytes, view: new DataView(bytes.buffer) };
+}
+
+async function createZipBlob(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const safeName = file.name.replace(/[\\/]+/g, "-");
+    const nameBytes = encoder.encode(safeName);
+    const data = new Uint8Array(await file.blob.arrayBuffer());
+    const crc = getCrc32(data);
+
+    const local = makeZipPart(30 + nameBytes.length);
+    writeUint32(local.view, 0, 0x04034b50);
+    writeUint16(local.view, 4, 20);
+    writeUint16(local.view, 6, 0);
+    writeUint16(local.view, 8, 0);
+    writeUint16(local.view, 10, 0);
+    writeUint16(local.view, 12, 0);
+    writeUint32(local.view, 14, crc);
+    writeUint32(local.view, 18, data.length);
+    writeUint32(local.view, 22, data.length);
+    writeUint16(local.view, 26, nameBytes.length);
+    writeUint16(local.view, 28, 0);
+    local.bytes.set(nameBytes, 30);
+    localParts.push(local.bytes, data);
+
+    const central = makeZipPart(46 + nameBytes.length);
+    writeUint32(central.view, 0, 0x02014b50);
+    writeUint16(central.view, 4, 20);
+    writeUint16(central.view, 6, 20);
+    writeUint16(central.view, 8, 0);
+    writeUint16(central.view, 10, 0);
+    writeUint16(central.view, 12, 0);
+    writeUint16(central.view, 14, 0);
+    writeUint32(central.view, 16, crc);
+    writeUint32(central.view, 20, data.length);
+    writeUint32(central.view, 24, data.length);
+    writeUint16(central.view, 28, nameBytes.length);
+    writeUint16(central.view, 30, 0);
+    writeUint16(central.view, 32, 0);
+    writeUint16(central.view, 34, 0);
+    writeUint16(central.view, 36, 0);
+    writeUint32(central.view, 38, 0);
+    writeUint32(central.view, 42, offset);
+    central.bytes.set(nameBytes, 46);
+    centralParts.push(central.bytes);
+
+    offset += local.bytes.length + data.length;
+  }
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = makeZipPart(22);
+  writeUint32(end.view, 0, 0x06054b50);
+  writeUint16(end.view, 4, 0);
+  writeUint16(end.view, 6, 0);
+  writeUint16(end.view, 8, files.length);
+  writeUint16(end.view, 10, files.length);
+  writeUint32(end.view, 12, centralSize);
+  writeUint32(end.view, 16, offset);
+  writeUint16(end.view, 20, 0);
+
+  return new Blob([...localParts, ...centralParts, end.bytes], { type: "application/zip" });
+}
+
 function clamp(value) {
   return Math.max(0, Math.min(255, value));
 }
@@ -506,8 +604,7 @@ async function processImage({ file, mode, outputMime, quality, strength }) {
   }
 
   URL.revokeObjectURL(url);
-  const outputQuality = mode === "enhance" && outputMime !== "image/png" ? 0.94 : quality;
-  return canvasToBlob(canvas, outputMime, outputQuality);
+  return canvasToBlob(canvas, outputMime, quality);
 }
 
 function getWatermarkPosition(position, canvasWidth, canvasHeight, markWidth, markHeight, margin) {
@@ -575,6 +672,7 @@ function downloadBlob(blob, filename) {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
+  document.documentElement.dataset.lastImageopsDownload = filename;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -758,7 +856,7 @@ function Home({ navigate, t }) {
   const tools = Object.values(toolBase).map((tool) => ({ ...tool, ...t.tools[tool.id] }));
 
   return (
-    <main className="page page-enter">
+    <main className="page home-page page-enter">
       <section className="hero">
         <div className="hero-copy">
           <h1>
@@ -874,12 +972,13 @@ function ToolPage({ tool, navigate, t }) {
   const [resultUrl, setResultUrl] = useState("");
   const [resultBlob, setResultBlob] = useState(null);
   const [resultMime, setResultMime] = useState(tool.defaultFormat);
-  const [quality, setQuality] = useState(0.82);
+  const [quality, setQuality] = useState(1);
   const [strength, setStrength] = useState(55);
   const [outputMime, setOutputMime] = useState(tool.defaultFormat);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const processingRef = useRef(false);
   const Icon = tool.icon;
 
   useEffect(() => {
@@ -920,11 +1019,13 @@ function ToolPage({ tool, navigate, t }) {
   }, [originalUrl, resultUrl, t.uploader.invalid]);
 
   const runProcess = useCallback(async () => {
+    if (processingRef.current) return;
     if (!file) {
       setError(t.uploader.missing);
       return;
     }
 
+    processingRef.current = true;
     setStatus("processing");
     setError("");
     try {
@@ -944,6 +1045,8 @@ function ToolPage({ tool, navigate, t }) {
     } catch {
       setError(t.uploader.failed);
       setStatus("ready");
+    } finally {
+      processingRef.current = false;
     }
   }, [file, outputMime, quality, resultUrl, strength, tool.id, t.uploader.failed, t.uploader.missing]);
 
@@ -1011,7 +1114,7 @@ function ToolPage({ tool, navigate, t }) {
                   <span>{t.settings.quality} {Math.round(quality * 100)}%</span>
                   <input
                     min="0.35"
-                    max="0.95"
+                    max="1"
                     step="0.01"
                     type="range"
                     value={quality}
@@ -1112,13 +1215,15 @@ function WatermarkPage({ tool, navigate, t }) {
   const resultsRef = useRef([]);
   const watermarkUrlRef = useRef("");
   const [outputMime, setOutputMime] = useState(tool.defaultFormat);
-  const [quality, setQuality] = useState(0.9);
+  const [quality, setQuality] = useState(1);
   const [opacity, setOpacity] = useState(60);
   const [scale, setScale] = useState(18);
   const [position, setPosition] = useState("bottom-right");
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const watermarkProcessingRef = useRef(false);
+  const zipDownloadingRef = useRef(false);
   const Icon = tool.icon;
 
   useEffect(() => {
@@ -1182,6 +1287,7 @@ function WatermarkPage({ tool, navigate, t }) {
   }, [clearResults, t.uploader.invalid, watermarkUrl]);
 
   const runWatermark = useCallback(async () => {
+    if (watermarkProcessingRef.current) return;
     if (!watermarkFile) {
       setError(t.uploader.watermarkMissing);
       return;
@@ -1191,6 +1297,7 @@ function WatermarkPage({ tool, navigate, t }) {
       return;
     }
 
+    watermarkProcessingRef.current = true;
     setStatus("processing");
     setError("");
     try {
@@ -1221,6 +1328,8 @@ function WatermarkPage({ tool, navigate, t }) {
     } catch {
       setError(t.uploader.failed);
       setStatus("ready");
+    } finally {
+      watermarkProcessingRef.current = false;
     }
   }, [
     opacity,
@@ -1247,10 +1356,15 @@ function WatermarkPage({ tool, navigate, t }) {
     handleWatermarkFile(event.dataTransfer.files?.[0]);
   };
 
-  const downloadAll = useCallback(() => {
-    results.forEach((item, index) => {
-      setTimeout(() => downloadBlob(item.blob, item.name), index * 130);
-    });
+  const downloadAll = useCallback(async () => {
+    if (!results.length || zipDownloadingRef.current) return;
+    zipDownloadingRef.current = true;
+    try {
+      const zipBlob = await createZipBlob(results);
+      downloadBlob(zipBlob, "imageops-watermarked-results.zip");
+    } finally {
+      zipDownloadingRef.current = false;
+    }
   }, [results]);
 
   const resultById = useMemo(() => new Map(results.map((item) => [item.id, item])), [results]);
@@ -1365,7 +1479,7 @@ function WatermarkPage({ tool, navigate, t }) {
               <span>{t.settings.quality} {Math.round(quality * 100)}%</span>
               <input
                 min="0.45"
-                max="0.98"
+                max="1"
                 step="0.01"
                 type="range"
                 value={quality}

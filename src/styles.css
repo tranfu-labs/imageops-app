@@ -245,15 +245,15 @@ a {
   grid-template-columns: minmax(430px, 0.92fr) minmax(520px, 1.08fr);
   gap: 28px;
   align-items: center;
-  min-height: 470px;
-  padding: 38px 4px 22px;
+  min-height: 402px;
+  padding: 26px 4px 16px;
 }
 
 .hero-copy h1 {
   max-width: 540px;
   margin: 0;
   color: var(--strong-ink);
-  font-size: clamp(42px, 3.65vw, 54px);
+  font-size: clamp(38px, 3.3vw, 50px);
   font-weight: 850;
   line-height: 1.12;
   letter-spacing: 0;
@@ -261,7 +261,7 @@ a {
 
 .hero-copy p {
   max-width: 540px;
-  margin: 22px 0 0;
+  margin: 17px 0 0;
   color: var(--muted);
   font-size: 16px;
   line-height: 1.75;
@@ -271,7 +271,7 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 13px;
-  margin-top: 30px;
+  margin-top: 24px;
 }
 
 .primary,
@@ -330,8 +330,8 @@ a {
 .trust-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 22px;
-  margin-top: 38px;
+  gap: 18px;
+  margin-top: 28px;
 }
 
 .trust-row span {
@@ -346,7 +346,7 @@ a {
 .preview-shell {
   display: grid;
   grid-template-columns: 166px minmax(0, 1fr);
-  min-height: 378px;
+  min-height: 336px;
   border: 1px solid var(--line);
   border-radius: 14px;
   overflow: hidden;
@@ -357,8 +357,8 @@ a {
 .preview-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 18px 10px;
+  gap: 8px;
+  padding: 14px 10px;
   border-right: 1px solid var(--soft-line);
   background: var(--surface);
 }
@@ -366,8 +366,8 @@ a {
 .drop-mini {
   display: grid;
   place-items: center;
-  min-height: 154px;
-  padding: 16px;
+  min-height: 126px;
+  padding: 12px;
   color: var(--ink);
   text-align: center;
   border: 1.5px dashed #c5cfdd;
@@ -375,7 +375,7 @@ a {
 }
 
 .drop-mini strong {
-  margin-top: 11px;
+  margin-top: 8px;
   font-size: 12px;
 }
 
@@ -390,7 +390,7 @@ a {
   display: flex;
   align-items: center;
   gap: 9px;
-  min-height: 34px;
+  min-height: 31px;
   padding: 0 9px;
   color: var(--muted);
   border-radius: 7px;
@@ -426,8 +426,8 @@ a {
 .preview-main {
   display: grid;
   align-content: start;
-  gap: 17px;
-  padding: 18px;
+  gap: 14px;
+  padding: 16px;
 }
 
 .image-comparison {
@@ -439,7 +439,7 @@ a {
 
 .image-comparison img {
   width: 100%;
-  height: 286px;
+  height: 246px;
   object-fit: fill;
 }
 
@@ -473,7 +473,7 @@ a {
   display: flex;
   align-items: center;
   gap: 11px;
-  min-height: 52px;
+  min-height: 48px;
   padding: 8px 10px;
   border: 1px solid var(--soft-line);
   border-radius: 8px;
@@ -524,7 +524,7 @@ a {
 }
 
 .section {
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .section h2,
@@ -545,8 +545,8 @@ a {
   grid-template-columns: 52px 1fr 20px;
   gap: 17px;
   align-items: center;
-  min-height: 104px;
-  padding: 23px 21px;
+  min-height: 94px;
+  padding: 19px 19px;
   color: var(--ink);
   text-align: left;
   border: 1px solid var(--line);
@@ -612,8 +612,8 @@ a {
 }
 
 .future-panel {
-  margin: 30px 0 58px;
-  padding: 27px 0 30px;
+  margin: 22px 0 32px;
+  padding: 22px 0 23px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--preview-bg);
@@ -626,8 +626,8 @@ a {
 .future-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 20px;
-  padding: 22px 38px 0;
+  gap: 18px;
+  padding: 17px 38px 0;
 }
 
 .future-item {

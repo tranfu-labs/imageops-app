@@ -150,6 +150,12 @@ async function runTool(client, route) {
       await new Promise((resolve) => setTimeout(resolve, 180));
       const button = document.querySelector('.process-actions .primary');
       if (!button) throw new Error('process button missing');
+      const qualityText = Array.from(document.querySelectorAll('.settings-group label span'))
+        .map((node) => node.textContent || '')
+        .find((text) => text.includes('画质') || text.includes('Quality')) || '';
+      if (['compress', 'convert'].includes('${route}') && !qualityText.includes('100%')) {
+        throw new Error('default quality is not 100% for ${route}: ' + qualityText);
+      }
       button.click();
       for (let i = 0; i < 80; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -227,6 +233,10 @@ async function runWatermarkTool(client) {
         const links = Array.from(document.querySelectorAll('.batch-card .mini-download'));
         const downloadAll = document.querySelector('.download-all-action:not(:disabled)');
         if (links.length === 2 && downloadAll) {
+          const qualityText = Array.from(document.querySelectorAll('.settings-group label span'))
+            .map((node) => node.textContent || '')
+            .find((text) => text.includes('画质') || text.includes('Quality')) || '';
+          if (!qualityText.includes('100%')) throw new Error('watermark default quality is not 100%: ' + qualityText);
           const firstPreview = document.querySelector('.batch-card .preview-trigger');
           firstPreview?.click();
           await new Promise((resolve) => setTimeout(resolve, 120));
@@ -238,6 +248,15 @@ async function runWatermarkTool(client) {
           await new Promise((resolve) => setTimeout(resolve, 80));
           if (before !== '1 / 2' || after !== '2 / 2' || document.querySelector('.image-lightbox')) {
             throw new Error('watermark lightbox navigation failed');
+          }
+          downloadAll.click();
+          for (let j = 0; j < 50; j += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            if ((document.documentElement.dataset.lastImageopsDownload || '').endsWith('.zip')) break;
+          }
+          const zipName = document.documentElement.dataset.lastImageopsDownload || '';
+          if (zipName !== 'imageops-watermarked-results.zip') {
+            throw new Error('download all did not produce zip: ' + zipName);
           }
           return {
             route: 'watermark',
