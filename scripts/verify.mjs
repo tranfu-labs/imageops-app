@@ -164,6 +164,70 @@ async function runTool(client, route) {
   `);
 }
 
+async function runWatermarkTool(client) {
+  await navigate(client, `${baseUrl}#watermark`);
+  return client.evaluate(`
+    (async () => {
+      const response = await fetch('/sample-mountain.png');
+      const blob = await response.blob();
+      const targetOne = new File([blob], 'sample-mountain-one.png', { type: 'image/png' });
+      const targetTwo = new File([blob], 'sample-mountain-two.png', { type: 'image/png' });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 360;
+      canvas.height = 120;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'rgba(12, 99, 246, 0.92)';
+      ctx.roundRect(0, 0, canvas.width, canvas.height, 24);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 48px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('ImageOps', canvas.width / 2, canvas.height / 2);
+      const watermarkBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      const watermark = new File([watermarkBlob], 'imageops-watermark.png', { type: 'image/png' });
+
+      const targetInput = document.querySelector('input[data-upload="targets"]');
+      const watermarkInput = document.querySelector('input[data-upload="watermark"]');
+      if (!targetInput || !watermarkInput) throw new Error('watermark inputs missing');
+
+      const targetData = new DataTransfer();
+      targetData.items.add(targetOne);
+      targetData.items.add(targetTwo);
+      targetInput.files = targetData.files;
+      targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+      const watermarkData = new DataTransfer();
+      watermarkData.items.add(watermark);
+      watermarkInput.files = watermarkData.files;
+      watermarkInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      const button = document.querySelector('.process-actions .primary');
+      if (!button) throw new Error('watermark process button missing');
+      button.click();
+
+      for (let i = 0; i < 100; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        const links = Array.from(document.querySelectorAll('.batch-card .mini-download'));
+        const downloadAll = document.querySelector('.download-all-action:not(:disabled)');
+        if (links.length === 2 && downloadAll) {
+          return {
+            route: 'watermark',
+            title: document.querySelector('.tool-hero h1')?.textContent || '',
+            downloadNames: links.map((link) => link.getAttribute('download') || ''),
+            stats: Array.from(document.querySelectorAll('.result-stats strong')).map((node) => node.textContent),
+            resultCount: links.length
+          };
+        }
+      }
+      throw new Error('watermark processing timed out');
+    })()
+  `);
+}
+
 async function setPreferences(client, locale = "zh", theme = "light") {
   await client.evaluate(`
     localStorage.setItem('imageops-locale', '${locale}');
@@ -258,6 +322,8 @@ async function main() {
       results.push(await runTool(client, route));
       await client.screenshot(path.join(artifactsDir, `${route}.png`));
     }
+    results.push(await runWatermarkTool(client));
+    await client.screenshot(path.join(artifactsDir, "watermark.png"));
     await client.send("Emulation.setDeviceMetricsOverride", {
       width: 390,
       height: 844,

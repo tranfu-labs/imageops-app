@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -29,6 +29,7 @@ const routes = {
   compress: "compress",
   convert: "convert",
   enhance: "enhance",
+  watermark: "watermark",
 };
 
 const toolBase = {
@@ -53,13 +54,20 @@ const toolBase = {
     defaultFormat: "image/webp",
     outputName: "enhanced",
   },
+  watermark: {
+    id: "watermark",
+    icon: BadgeCheck,
+    tone: "orange",
+    defaultFormat: "image/webp",
+    outputName: "watermarked",
+  },
 };
 
 const futureBase = [
   { id: "api", icon: Braces, tone: "blue" },
   { id: "cli", icon: Terminal, tone: "dark" },
   { id: "ocr", icon: Monitor, tone: "green" },
-  { id: "watermark", icon: BadgeCheck, tone: "orange" },
+  { id: "removeWatermark", icon: BadgeCheck, tone: "orange" },
   { id: "html", icon: FileImage, tone: "blue-soft" },
 ];
 
@@ -73,6 +81,7 @@ const messages = {
       viewTools: "查看工具",
       download: "下载图片",
       downloadResult: "下载结果",
+      downloadAll: "下载全部",
       back: "返回首页",
       processing: "处理中",
     },
@@ -119,12 +128,17 @@ const messages = {
         subtitle: "增强边缘和细节，让发灰、发糊的图片更清晰。",
         action: "开始增强",
       },
+      watermark: {
+        title: "添加水印",
+        subtitle: "上传水印图并批量添加到图片，适合运营、设计和内容发布场景。",
+        action: "开始添加",
+      },
     },
     future: {
       api: { label: "API", text: "强大的 API 接口" },
       cli: { label: "CLI", text: "命令行工具" },
       ocr: { label: "OCR", text: "图片文字识别" },
-      watermark: { label: "水印", text: "添加或去除水印" },
+      removeWatermark: { label: "去除水印", text: "合规去水印能力规划中" },
       html: { label: "HTML 转图片", text: "将网页转换为图片" },
     },
     uploader: {
@@ -137,15 +151,34 @@ const messages = {
       click: "或点击上传 JPG、PNG、WebP 图片",
       invalid: "请选择图片文件",
       missing: "请先上传图片",
+      watermarkMissing: "请先上传水印图片",
+      targetsMissing: "请先上传要加水印的图片",
       failed: "处理失败，请换一张图片试试",
+      watermarkClick: "上传 PNG、JPG、WebP 水印图片",
+      batchClick: "可拖拽或点击批量上传 JPG、PNG、WebP 图片",
+      targetImages: "待加水印图片",
+      watermarkImage: "水印图片",
+      selected: "已选择",
+      batchReady: "批量结果会在这里显示",
+      noResults: "添加水印后查看结果",
     },
     settings: {
       outputFormat: "输出格式",
       quality: "画质",
       strength: "增强强度",
+      watermarkOpacity: "水印透明度",
+      watermarkSize: "水印大小",
+      watermarkPosition: "水印位置",
       original: "原图",
       result: "结果",
       reduced: "减少",
+      total: "总数",
+      completed: "完成",
+      positionBottomRight: "右下角",
+      positionBottomLeft: "左下角",
+      positionTopRight: "右上角",
+      positionTopLeft: "左上角",
+      positionCenter: "居中",
     },
     toggles: {
       language: "EN",
@@ -162,6 +195,7 @@ const messages = {
       viewTools: "View tools",
       download: "Download",
       downloadResult: "Download result",
+      downloadAll: "Download all",
       back: "Back home",
       processing: "Processing",
     },
@@ -208,12 +242,17 @@ const messages = {
         subtitle: "Improve edges and detail so dull or soft images look clearer.",
         action: "Enhance",
       },
+      watermark: {
+        title: "Add watermark",
+        subtitle: "Upload a watermark image and apply it to multiple images in one batch.",
+        action: "Add watermark",
+      },
     },
     future: {
       api: { label: "API", text: "Powerful API access" },
       cli: { label: "CLI", text: "Command-line tools" },
       ocr: { label: "OCR", text: "Extract text from images" },
-      watermark: { label: "Watermark", text: "Add or remove marks" },
+      removeWatermark: { label: "Remove watermark", text: "Compliant removal planned" },
       html: { label: "HTML to image", text: "Turn web pages into images" },
     },
     uploader: {
@@ -226,15 +265,34 @@ const messages = {
       click: "or click to upload JPG, PNG, or WebP",
       invalid: "Please choose an image file",
       missing: "Please upload an image first",
+      watermarkMissing: "Please upload a watermark image first",
+      targetsMissing: "Please upload target images first",
       failed: "Processing failed. Try another image.",
+      watermarkClick: "Upload a PNG, JPG, or WebP watermark",
+      batchClick: "Drop or click to upload JPG, PNG, or WebP images in batch",
+      targetImages: "Target images",
+      watermarkImage: "Watermark image",
+      selected: "Selected",
+      batchReady: "Batch results will appear here",
+      noResults: "Add watermark to preview results",
     },
     settings: {
       outputFormat: "Output format",
       quality: "Quality",
       strength: "Enhancement strength",
+      watermarkOpacity: "Watermark opacity",
+      watermarkSize: "Watermark size",
+      watermarkPosition: "Watermark position",
       original: "Original",
       result: "Result",
       reduced: "Reduced",
+      total: "Total",
+      completed: "Done",
+      positionBottomRight: "Bottom right",
+      positionBottomLeft: "Bottom left",
+      positionTopRight: "Top right",
+      positionTopLeft: "Top left",
+      positionCenter: "Center",
     },
     toggles: {
       language: "中文",
@@ -418,9 +476,75 @@ async function processImage({ file, mode, outputMime, quality, strength }) {
   return canvasToBlob(canvas, outputMime, outputQuality);
 }
 
+function getWatermarkPosition(position, canvasWidth, canvasHeight, markWidth, markHeight, margin) {
+  const positions = {
+    "top-left": [margin, margin],
+    "top-right": [canvasWidth - markWidth - margin, margin],
+    "bottom-left": [margin, canvasHeight - markHeight - margin],
+    "bottom-right": [canvasWidth - markWidth - margin, canvasHeight - markHeight - margin],
+    center: [(canvasWidth - markWidth) / 2, (canvasHeight - markHeight) / 2],
+  };
+  return positions[position] || positions["bottom-right"];
+}
+
+async function processWatermarkImage({
+  file,
+  watermarkFile,
+  outputMime,
+  quality,
+  opacity,
+  scale,
+  position,
+}) {
+  const [{ image, url }, { image: watermarkImage, url: watermarkUrl }] = await Promise.all([
+    loadImage(file),
+    loadImage(watermarkFile),
+  ]);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const maxEdge = 3200;
+  const imageScale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * imageScale));
+  const height = Math.max(1, Math.round(image.naturalHeight * imageScale));
+
+  canvas.width = width;
+  canvas.height = height;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(image, 0, 0, width, height);
+
+  const markWidth = Math.max(24, Math.round(width * (scale / 100)));
+  const markHeight = Math.max(24, Math.round(markWidth * (watermarkImage.naturalHeight / watermarkImage.naturalWidth)));
+  const margin = Math.max(16, Math.round(Math.min(width, height) * 0.035));
+  const [x, y] = getWatermarkPosition(position, width, height, markWidth, markHeight, margin);
+
+  ctx.globalAlpha = opacity / 100;
+  ctx.drawImage(watermarkImage, x, y, markWidth, markHeight);
+  ctx.globalAlpha = 1;
+
+  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(watermarkUrl);
+  return canvasToBlob(canvas, outputMime, outputMime === "image/png" ? undefined : quality);
+}
+
+function makeFileId(file, index = 0) {
+  return `${file.name}-${file.size}-${file.lastModified}-${index}-${Math.random().toString(36).slice(2)}`;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 400);
+}
+
 function Header({ route, navigate, locale, setLocale, theme, setTheme, t }) {
   const navItems = [
-    { label: t.nav.tools, target: "compress", activeRoutes: ["compress", "convert", "enhance"] },
+    { label: t.nav.tools, target: "compress", activeRoutes: ["compress", "convert", "enhance", "watermark"] },
     { label: t.nav.api, target: "home", activeRoutes: [] },
     { label: t.nav.cli, target: "home", activeRoutes: [] },
   ];
@@ -491,6 +615,10 @@ function HeroPreview({ t }) {
         <div className="mini-tool">
           <Sparkles size={18} />
           <span>{t.tools.enhance.title}</span>
+        </div>
+        <div className="mini-tool">
+          <BadgeCheck size={18} />
+          <span>{t.tools.watermark.title}</span>
         </div>
 
         <button className="more-tools" type="button">
@@ -846,6 +974,347 @@ function ToolPage({ tool, navigate, t }) {
   );
 }
 
+function WatermarkPage({ tool, navigate, t }) {
+  const [targetItems, setTargetItems] = useState([]);
+  const [watermarkFile, setWatermarkFile] = useState(null);
+  const [watermarkUrl, setWatermarkUrl] = useState("");
+  const [results, setResults] = useState([]);
+  const targetItemsRef = useRef([]);
+  const resultsRef = useRef([]);
+  const watermarkUrlRef = useRef("");
+  const [outputMime, setOutputMime] = useState(tool.defaultFormat);
+  const [quality, setQuality] = useState(0.9);
+  const [opacity, setOpacity] = useState(60);
+  const [scale, setScale] = useState(18);
+  const [position, setPosition] = useState("bottom-right");
+  const [status, setStatus] = useState("idle");
+  const [error, setError] = useState("");
+  const Icon = tool.icon;
+
+  useEffect(() => {
+    targetItemsRef.current = targetItems;
+  }, [targetItems]);
+
+  useEffect(() => {
+    resultsRef.current = results;
+  }, [results]);
+
+  useEffect(() => {
+    watermarkUrlRef.current = watermarkUrl;
+  }, [watermarkUrl]);
+
+  useEffect(() => () => {
+    targetItemsRef.current.forEach((item) => URL.revokeObjectURL(item.originalUrl));
+    resultsRef.current.forEach((item) => URL.revokeObjectURL(item.url));
+    if (watermarkUrlRef.current) URL.revokeObjectURL(watermarkUrlRef.current);
+  }, []);
+
+  const clearResults = useCallback(() => {
+    results.forEach((item) => URL.revokeObjectURL(item.url));
+    setResults([]);
+    setStatus(targetItems.length || watermarkFile ? "ready" : "idle");
+  }, [results, targetItems.length, watermarkFile]);
+
+  const handleTargetFiles = useCallback((fileList) => {
+    const nextFiles = Array.from(fileList || []).filter((item) => item.type.startsWith("image/"));
+    if (!nextFiles.length) {
+      setError(t.uploader.invalid);
+      return;
+    }
+
+    targetItems.forEach((item) => URL.revokeObjectURL(item.originalUrl));
+    results.forEach((item) => URL.revokeObjectURL(item.url));
+    const nextItems = nextFiles.map((file, index) => ({
+      id: makeFileId(file, index),
+      file,
+      originalUrl: URL.createObjectURL(file),
+    }));
+
+    setTargetItems(nextItems);
+    setResults([]);
+    setStatus("ready");
+    setError("");
+  }, [results, targetItems, t.uploader.invalid]);
+
+  const handleWatermarkFile = useCallback((nextFile) => {
+    if (!nextFile) return;
+    if (!nextFile.type.startsWith("image/")) {
+      setError(t.uploader.invalid);
+      return;
+    }
+
+    if (watermarkUrl) URL.revokeObjectURL(watermarkUrl);
+    setWatermarkFile(nextFile);
+    setWatermarkUrl(URL.createObjectURL(nextFile));
+    clearResults();
+    setStatus("ready");
+    setError("");
+  }, [clearResults, t.uploader.invalid, watermarkUrl]);
+
+  const runWatermark = useCallback(async () => {
+    if (!watermarkFile) {
+      setError(t.uploader.watermarkMissing);
+      return;
+    }
+    if (!targetItems.length) {
+      setError(t.uploader.targetsMissing);
+      return;
+    }
+
+    setStatus("processing");
+    setError("");
+    try {
+      results.forEach((item) => URL.revokeObjectURL(item.url));
+      const nextResults = [];
+      for (const item of targetItems) {
+        const { blob, mime } = await processWatermarkImage({
+          file: item.file,
+          watermarkFile,
+          outputMime,
+          quality,
+          opacity,
+          scale,
+          position,
+        });
+        const base = item.file.name.replace(/\.[^.]+$/, "") || "image";
+        nextResults.push({
+          id: item.id,
+          name: `${base}-${tool.outputName}.${getExtension(mime)}`,
+          blob,
+          mime,
+          size: blob.size,
+          url: URL.createObjectURL(blob),
+        });
+      }
+      setResults(nextResults);
+      setStatus("done");
+    } catch {
+      setError(t.uploader.failed);
+      setStatus("ready");
+    }
+  }, [
+    opacity,
+    outputMime,
+    position,
+    quality,
+    results,
+    scale,
+    targetItems,
+    tool.outputName,
+    t.uploader.failed,
+    t.uploader.targetsMissing,
+    t.uploader.watermarkMissing,
+    watermarkFile,
+  ]);
+
+  const onTargetDrop = (event) => {
+    event.preventDefault();
+    handleTargetFiles(event.dataTransfer.files);
+  };
+
+  const onWatermarkDrop = (event) => {
+    event.preventDefault();
+    handleWatermarkFile(event.dataTransfer.files?.[0]);
+  };
+
+  const downloadAll = useCallback(() => {
+    results.forEach((item, index) => {
+      setTimeout(() => downloadBlob(item.blob, item.name), index * 130);
+    });
+  }, [results]);
+
+  const resultById = useMemo(() => new Map(results.map((item) => [item.id, item])), [results]);
+  const completedCount = results.length;
+
+  return (
+    <main className="page tool-page page-enter">
+      <button className="back-link" type="button" onClick={() => navigate(routes.home)}>
+        <ArrowLeft size={18} />
+        {t.actions.back}
+      </button>
+
+      <section className="tool-hero">
+        <span className={`tool-icon large ${tool.tone}`}>
+          <Icon size={32} />
+        </span>
+        <div>
+          <h1>{tool.title}</h1>
+          <p>{tool.subtitle}</p>
+        </div>
+      </section>
+
+      <section className="workspace-grid watermark-workspace">
+        <div className="processor-panel">
+          <label
+            className="upload-zone"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={onTargetDrop}
+          >
+            <input
+              accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+              data-upload="targets"
+              multiple
+              type="file"
+              onChange={(event) => handleTargetFiles(event.target.files)}
+            />
+            <Upload size={34} />
+            <strong>{targetItems.length ? `${targetItems.length} ${t.uploader.selected}` : t.uploader.targetImages}</strong>
+            <span>{targetItems.length ? targetItems.map((item) => item.file.name).slice(0, 2).join(" · ") : t.uploader.batchClick}</span>
+          </label>
+
+          <label
+            className="upload-zone compact-upload"
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={onWatermarkDrop}
+          >
+            <input
+              accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+              data-upload="watermark"
+              type="file"
+              onChange={(event) => handleWatermarkFile(event.target.files?.[0])}
+            />
+            <ImageIcon size={28} />
+            <strong>{watermarkFile ? watermarkFile.name : t.uploader.watermarkImage}</strong>
+            <span>{watermarkFile ? `${formatBytes(watermarkFile.size)} · ${t.uploader.reselect}` : t.uploader.watermarkClick}</span>
+          </label>
+
+          <div className="settings-group">
+            <label>
+              <span>{t.settings.watermarkPosition}</span>
+              <select value={position} onChange={(event) => setPosition(event.target.value)}>
+                <option value="bottom-right">{t.settings.positionBottomRight}</option>
+                <option value="bottom-left">{t.settings.positionBottomLeft}</option>
+                <option value="top-right">{t.settings.positionTopRight}</option>
+                <option value="top-left">{t.settings.positionTopLeft}</option>
+                <option value="center">{t.settings.positionCenter}</option>
+              </select>
+            </label>
+            <label>
+              <span>{t.settings.watermarkOpacity} {opacity}%</span>
+              <input
+                min="10"
+                max="100"
+                step="1"
+                type="range"
+                value={opacity}
+                onChange={(event) => setOpacity(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              <span>{t.settings.watermarkSize} {scale}%</span>
+              <input
+                min="6"
+                max="45"
+                step="1"
+                type="range"
+                value={scale}
+                onChange={(event) => setScale(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              <span>{t.settings.outputFormat}</span>
+              <select value={outputMime} onChange={(event) => setOutputMime(event.target.value)}>
+                <option value="image/webp">WebP</option>
+                <option value="image/png">PNG</option>
+                <option value="image/jpeg">JPG</option>
+              </select>
+            </label>
+            <label>
+              <span>{t.settings.quality} {Math.round(quality * 100)}%</span>
+              <input
+                min="0.45"
+                max="0.98"
+                step="0.01"
+                type="range"
+                value={quality}
+                onChange={(event) => setQuality(Number(event.target.value))}
+              />
+            </label>
+          </div>
+
+          {error && <div className="error-note">{error}</div>}
+
+          <div className="process-actions">
+            <button className="primary" type="button" onClick={runWatermark} disabled={status === "processing"}>
+              {status === "processing" ? <RefreshCw className="spin" size={20} /> : <Wand2 size={20} />}
+              {status === "processing" ? t.actions.processing : tool.action}
+            </button>
+            <button
+              className={`secondary download-all-action ${completedCount ? "" : "disabled"}`}
+              type="button"
+              onClick={downloadAll}
+              disabled={!completedCount}
+            >
+              <ArrowDownToLine size={19} />
+              {t.actions.downloadAll}
+            </button>
+          </div>
+
+          <div className="result-stats">
+            <span>
+              <small>{t.settings.total}</small>
+              <strong>{targetItems.length}</strong>
+            </span>
+            <span>
+              <small>{t.uploader.watermarkImage}</small>
+              <strong>{watermarkFile ? formatBytes(watermarkFile.size) : "0 KB"}</strong>
+            </span>
+            <span>
+              <small>{t.settings.completed}</small>
+              <strong>{completedCount}</strong>
+            </span>
+          </div>
+        </div>
+
+        <div className="preview-panel">
+          {!targetItems.length ? (
+            <div className="empty-preview">
+              <ImageIcon size={44} />
+              <strong>{t.uploader.noResults}</strong>
+              <span>{t.uploader.batchReady}</span>
+            </div>
+          ) : (
+            <div className="batch-preview">
+              {watermarkUrl && (
+                <div className="watermark-summary">
+                  <img src={watermarkUrl} alt={t.uploader.watermarkImage} />
+                  <span>
+                    <strong>{t.uploader.watermarkImage}</strong>
+                    <small>{watermarkFile?.name}</small>
+                  </span>
+                </div>
+              )}
+              <div className="batch-grid">
+                {targetItems.map((item) => {
+                  const result = resultById.get(item.id);
+                  return (
+                    <figure className="batch-card" key={item.id}>
+                      <div className="batch-image">
+                        <img src={result?.url || item.originalUrl} alt={item.file.name} />
+                        <span>{result ? t.settings.result : t.uploader.pending}</span>
+                      </div>
+                      <figcaption>
+                        <strong>{item.file.name}</strong>
+                        <small>{result ? `${formatBytes(result.size)} · ${result.name}` : formatBytes(item.file.size)}</small>
+                        {result && (
+                          <a className="mini-download" href={result.url} download={result.name}>
+                            <ArrowDownToLine size={15} />
+                            {t.actions.downloadResult}
+                          </a>
+                        )}
+                      </figcaption>
+                    </figure>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+
 export function App() {
   const [route, navigate] = useHashRoute();
   const [locale, setLocale] = useState(getInitialLocale);
@@ -874,7 +1343,13 @@ export function App() {
         setTheme={setTheme}
         t={t}
       />
-      {selectedTool ? <ToolPage tool={selectedTool} navigate={navigate} t={t} /> : <Home navigate={navigate} t={t} />}
+      {selectedTool?.id === routes.watermark ? (
+        <WatermarkPage tool={selectedTool} navigate={navigate} t={t} />
+      ) : selectedTool ? (
+        <ToolPage tool={selectedTool} navigate={navigate} t={t} />
+      ) : (
+        <Home navigate={navigate} t={t} />
+      )}
     </div>
   );
 }

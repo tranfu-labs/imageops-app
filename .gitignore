@@ -6,3 +6,13 @@ dist/
 qa-artifacts/
 .DS_Store
 *.log
+.npmrc
+AGENTS.md
+design-qa.md
+public/brand/originals/
+public/brand/apple-touch-icon-20260609.png
+public/brand/favicon-20260609.ico
+public/brand/favicon-32x32-20260609.png
+public/brand/icon-512x512-20260609.png
+public/brand/logo-icon-tight-source.png
+public/brand/og-image-1200x630-20260609.png
