@@ -1,0 +1,26 @@
+{
+  "name": "图片助手 ImageOps",
+  "short_name": "ImageOps",
+  "description": "面向 Agent 时代的图片处理自动化基础设施",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0c63f6",
+  "icons": [
+    {
+      "src": "/brand/favicon-32x32-20260609-tight.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/brand/apple-touch-icon-20260609-tight.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/brand/icon-512x512-20260609-tight.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
