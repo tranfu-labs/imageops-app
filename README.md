@@ -83,6 +83,27 @@ imageops-app.tranfu.com
 
 7. 在 DNS 服务商处添加对应的 CNAME 记录，指向 Vercel 提供的域名。
 
+### Coolify Docker 部署
+
+仓库已包含 `Dockerfile`、`compose.yml`、`nginx.conf` 和 `.dockerignore`。
+
+1. 在 Coolify 中使用 Docker Compose 导入本仓库。
+2. Domain 绑定到 `web` 服务。
+3. 内部端口填写：
+
+```text
+80
+```
+
+或在 Domain 配置中使用：
+
+```text
+https://imageops-app.tranfu.com:80
+```
+
+4. 当前版本不需要配置环境变量。
+5. `compose.yml` 没有暴露宿主机公网端口，Coolify/Traefik 会通过 `web:80` 访问应用。
+
 ### 其他静态托管平台
 
 只要平台支持静态网站即可部署：
