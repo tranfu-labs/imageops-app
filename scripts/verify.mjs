@@ -9,6 +9,12 @@ const port = 9337;
 const baseUrl = "http://127.0.0.1:5173/";
 const artifactsDir = path.join(root, "qa-artifacts");
 const profileDir = path.join(root, ".qa-chrome-profile");
+const routePaths = {
+  compress: "compress",
+  convert: "convert",
+  enhance: "enhance",
+  watermark: "watermark",
+};
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -129,7 +135,7 @@ async function navigate(client, url) {
 }
 
 async function runTool(client, route) {
-  await navigate(client, `${baseUrl}#${route}`);
+  await navigate(client, `${baseUrl}${routePaths[route]}`);
   return client.evaluate(`
     (async () => {
       const response = await fetch('/sample-mountain.png');
@@ -150,6 +156,13 @@ async function runTool(client, route) {
         const link = document.querySelector('.download-action:not(.disabled)');
         const resultImage = document.querySelector('.compare-live figure:nth-child(2) img');
         if (link && resultImage) {
+          resultImage.closest('button')?.click();
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          const opened = !!document.querySelector('.image-lightbox img');
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          const closed = !document.querySelector('.image-lightbox');
+          if (!opened || !closed) throw new Error('lightbox failed for ${route}');
           return {
             route: '${route}',
             title: document.querySelector('.tool-hero h1')?.textContent || '',
@@ -165,7 +178,7 @@ async function runTool(client, route) {
 }
 
 async function runWatermarkTool(client) {
-  await navigate(client, `${baseUrl}#watermark`);
+  await navigate(client, `${baseUrl}${routePaths.watermark}`);
   return client.evaluate(`
     (async () => {
       const response = await fetch('/sample-mountain.png');
@@ -214,6 +227,18 @@ async function runWatermarkTool(client) {
         const links = Array.from(document.querySelectorAll('.batch-card .mini-download'));
         const downloadAll = document.querySelector('.download-all-action:not(:disabled)');
         if (links.length === 2 && downloadAll) {
+          const firstPreview = document.querySelector('.batch-card .preview-trigger');
+          firstPreview?.click();
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          const before = document.querySelector('.lightbox-figure figcaption span')?.textContent || '';
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          const after = document.querySelector('.lightbox-figure figcaption span')?.textContent || '';
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          if (before !== '1 / 2' || after !== '2 / 2' || document.querySelector('.image-lightbox')) {
+            throw new Error('watermark lightbox navigation failed');
+          }
           return {
             route: 'watermark',
             title: document.querySelector('.tool-hero h1')?.textContent || '',

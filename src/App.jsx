@@ -7,6 +7,8 @@ import {
   Box,
   Braces,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   FileImage,
   Image as ImageIcon,
   Languages,
@@ -22,6 +24,7 @@ import {
   Upload,
   Wand2,
   Zap,
+  X,
 } from "lucide-react";
 
 const routes = {
@@ -31,6 +34,16 @@ const routes = {
   enhance: "enhance",
   watermark: "watermark",
 };
+
+const routePaths = {
+  [routes.home]: "/",
+  [routes.compress]: "/compress",
+  [routes.convert]: "/convert",
+  [routes.enhance]: "/enhance",
+  [routes.watermark]: "/watermark",
+};
+
+const routesByPath = Object.fromEntries(Object.entries(routePaths).map(([route, path]) => [path, route]));
 
 const toolBase = {
   compress: {
@@ -84,6 +97,10 @@ const messages = {
       downloadAll: "下载全部",
       back: "返回首页",
       processing: "处理中",
+      closePreview: "关闭预览",
+      previousImage: "上一张",
+      nextImage: "下一张",
+      openPreview: "放大查看",
     },
     hero: {
       titleLine1: "一站式图片处理",
@@ -198,6 +215,10 @@ const messages = {
       downloadAll: "Download all",
       back: "Back home",
       processing: "Processing",
+      closePreview: "Close preview",
+      previousImage: "Previous image",
+      nextImage: "Next image",
+      openPreview: "Open preview",
     },
     hero: {
       titleLine1: "All-in-one image",
@@ -313,21 +334,34 @@ function getInitialTheme() {
   return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function useHashRoute() {
+function usePathRoute() {
   const readRoute = () => {
-    const value = window.location.hash.replace("#", "");
-    return routes[value] ? value : routes.home;
+    const hashRoute = window.location.hash.replace("#", "");
+    if (routes[hashRoute]) {
+      window.history.replaceState({}, "", routePaths[hashRoute]);
+      return hashRoute;
+    }
+
+    const path = window.location.pathname.replace(/\/+$/, "") || "/";
+    return routesByPath[path] || routes.home;
   };
   const [route, setRoute] = useState(readRoute);
 
   useEffect(() => {
-    const onHashChange = () => setRoute(readRoute());
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
+    const onRouteChange = () => setRoute(readRoute());
+    window.addEventListener("popstate", onRouteChange);
+    window.addEventListener("hashchange", onRouteChange);
+    return () => {
+      window.removeEventListener("popstate", onRouteChange);
+      window.removeEventListener("hashchange", onRouteChange);
+    };
   }, []);
 
   const navigate = useCallback((nextRoute) => {
-    window.location.hash = nextRoute === routes.home ? "" : nextRoute;
+    const nextPath = routePaths[nextRoute] || routePaths[routes.home];
+    if (window.location.pathname !== nextPath || window.location.hash) {
+      window.history.pushState({}, "", nextPath);
+    }
     setRoute(nextRoute);
   }, []);
 
@@ -513,9 +547,14 @@ async function processWatermarkImage({
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(image, 0, 0, width, height);
 
-  const markWidth = Math.max(24, Math.round(width * (scale / 100)));
-  const markHeight = Math.max(24, Math.round(markWidth * (watermarkImage.naturalHeight / watermarkImage.naturalWidth)));
   const margin = Math.max(16, Math.round(Math.min(width, height) * 0.035));
+  const maxMarkWidth = Math.max(24, width - margin * 2);
+  const maxMarkHeight = Math.max(24, height - margin * 2);
+  const requestedWidth = Math.max(24, Math.round(maxMarkWidth * (scale / 100)));
+  const requestedHeight = Math.max(24, Math.round(requestedWidth * (watermarkImage.naturalHeight / watermarkImage.naturalWidth)));
+  const fitScale = Math.min(1, maxMarkWidth / requestedWidth, maxMarkHeight / requestedHeight);
+  const markWidth = Math.max(24, Math.round(requestedWidth * fitScale));
+  const markHeight = Math.max(24, Math.round(requestedHeight * fitScale));
   const [x, y] = getWatermarkPosition(position, width, height, markWidth, markHeight, margin);
 
   ctx.globalAlpha = opacity / 100;
@@ -540,6 +579,67 @@ function downloadBlob(blob, filename) {
   anchor.click();
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 400);
+}
+
+function ImageLightbox({ images, index, setIndex, onClose, t }) {
+  const current = images[index];
+  const hasMultiple = images.length > 1;
+
+  const move = useCallback((delta) => {
+    setIndex((currentIndex) => (currentIndex + delta + images.length) % images.length);
+  }, [images.length, setIndex]);
+
+  useEffect(() => {
+    if (!current) onClose();
+  }, [current, onClose]);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowLeft" && hasMultiple) move(-1);
+      if (event.key === "ArrowRight" && hasMultiple) move(1);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hasMultiple, move, onClose]);
+
+  if (!current) return null;
+
+  return (
+    <div
+      className="image-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t.actions.openPreview}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <button className="lightbox-close" type="button" onClick={onClose} aria-label={t.actions.closePreview}>
+        <X size={22} />
+      </button>
+
+      {hasMultiple && (
+        <button className="lightbox-nav prev" type="button" onClick={() => move(-1)} aria-label={t.actions.previousImage}>
+          <ChevronLeft size={30} />
+        </button>
+      )}
+
+      <figure className="lightbox-figure">
+        <img src={current.src} alt={current.alt || current.label || ""} />
+        <figcaption>
+          <strong>{current.label}</strong>
+          {hasMultiple && <span>{index + 1} / {images.length}</span>}
+        </figcaption>
+      </figure>
+
+      {hasMultiple && (
+        <button className="lightbox-nav next" type="button" onClick={() => move(1)} aria-label={t.actions.nextImage}>
+          <ChevronRight size={30} />
+        </button>
+      )}
+    </div>
+  );
 }
 
 function Header({ route, navigate, locale, setLocale, theme, setTheme, t }) {
@@ -735,7 +835,7 @@ function Home({ navigate, t }) {
   );
 }
 
-function EmptyPreview({ file, originalUrl, resultUrl, t }) {
+function EmptyPreview({ file, originalUrl, resultUrl, t, onOpenPreview }) {
   if (!file) {
     return (
       <div className="empty-preview">
@@ -749,11 +849,19 @@ function EmptyPreview({ file, originalUrl, resultUrl, t }) {
   return (
     <div className="compare-live">
       <figure>
-        <img src={originalUrl} alt={t.uploader.original} />
+        <button className="preview-image-button" type="button" onClick={() => onOpenPreview(0)} aria-label={t.actions.openPreview}>
+          <img src={originalUrl} alt={t.uploader.original} />
+        </button>
         <figcaption>{t.uploader.original}</figcaption>
       </figure>
       <figure>
-        {resultUrl ? <img src={resultUrl} alt={t.uploader.result} /> : <div className="pending-result">{t.uploader.pending}</div>}
+        {resultUrl ? (
+          <button className="preview-image-button" type="button" onClick={() => onOpenPreview(1)} aria-label={t.actions.openPreview}>
+            <img src={resultUrl} alt={t.uploader.result} />
+          </button>
+        ) : (
+          <div className="pending-result">{t.uploader.pending}</div>
+        )}
         <figcaption>{t.uploader.result}</figcaption>
       </figure>
     </div>
@@ -771,6 +879,7 @@ function ToolPage({ tool, navigate, t }) {
   const [outputMime, setOutputMime] = useState(tool.defaultFormat);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
+  const [lightboxIndex, setLightboxIndex] = useState(null);
   const Icon = tool.icon;
 
   useEffect(() => {
@@ -847,6 +956,11 @@ function ToolPage({ tool, navigate, t }) {
     const base = file?.name?.replace(/\.[^.]+$/, "") || "image";
     return `${base}-${tool.outputName}.${getExtension(resultMime)}`;
   }, [file, resultMime, tool.outputName]);
+
+  const previewImages = useMemo(() => [
+    originalUrl ? { src: originalUrl, label: t.uploader.original, alt: t.uploader.original } : null,
+    resultUrl ? { src: resultUrl, label: t.uploader.result, alt: t.uploader.result } : null,
+  ].filter(Boolean), [originalUrl, resultUrl, t.uploader.original, t.uploader.result]);
 
   return (
     <main className="page tool-page page-enter">
@@ -967,9 +1081,24 @@ function ToolPage({ tool, navigate, t }) {
         </div>
 
         <div className="preview-panel">
-          <EmptyPreview file={file} originalUrl={originalUrl} resultUrl={resultUrl} t={t} />
+          <EmptyPreview
+            file={file}
+            originalUrl={originalUrl}
+            resultUrl={resultUrl}
+            t={t}
+            onOpenPreview={setLightboxIndex}
+          />
         </div>
       </section>
+      {lightboxIndex !== null && (
+        <ImageLightbox
+          images={previewImages}
+          index={Math.min(lightboxIndex, previewImages.length - 1)}
+          setIndex={setLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          t={t}
+        />
+      )}
     </main>
   );
 }
@@ -989,6 +1118,7 @@ function WatermarkPage({ tool, navigate, t }) {
   const [position, setPosition] = useState("bottom-right");
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
+  const [lightboxIndex, setLightboxIndex] = useState(null);
   const Icon = tool.icon;
 
   useEffect(() => {
@@ -1124,6 +1254,14 @@ function WatermarkPage({ tool, navigate, t }) {
   }, [results]);
 
   const resultById = useMemo(() => new Map(results.map((item) => [item.id, item])), [results]);
+  const lightboxImages = useMemo(() => targetItems.map((item) => {
+    const result = resultById.get(item.id);
+    return {
+      src: result?.url || item.originalUrl,
+      label: result?.name || item.file.name,
+      alt: item.file.name,
+    };
+  }), [resultById, targetItems]);
   const completedCount = results.length;
 
   return (
@@ -1145,38 +1283,42 @@ function WatermarkPage({ tool, navigate, t }) {
 
       <section className="workspace-grid watermark-workspace">
         <div className="processor-panel">
-          <label
-            className="upload-zone"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={onTargetDrop}
-          >
-            <input
-              accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
-              data-upload="targets"
-              multiple
-              type="file"
-              onChange={(event) => handleTargetFiles(event.target.files)}
-            />
-            <Upload size={34} />
-            <strong>{targetItems.length ? `${targetItems.length} ${t.uploader.selected}` : t.uploader.targetImages}</strong>
-            <span>{targetItems.length ? targetItems.map((item) => item.file.name).slice(0, 2).join(" · ") : t.uploader.batchClick}</span>
-          </label>
+          <div className="watermark-upload-stack">
+            <label
+              className="upload-zone step-upload"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={onWatermarkDrop}
+            >
+              <span className="step-badge" aria-hidden="true">①</span>
+              <input
+                accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+                data-upload="watermark"
+                type="file"
+                onChange={(event) => handleWatermarkFile(event.target.files?.[0])}
+              />
+              <ImageIcon size={32} />
+              <strong>{watermarkFile ? watermarkFile.name : t.uploader.watermarkImage}</strong>
+              <span>{watermarkFile ? `${formatBytes(watermarkFile.size)} · ${t.uploader.reselect}` : t.uploader.watermarkClick}</span>
+            </label>
 
-          <label
-            className="upload-zone compact-upload"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={onWatermarkDrop}
-          >
-            <input
-              accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
-              data-upload="watermark"
-              type="file"
-              onChange={(event) => handleWatermarkFile(event.target.files?.[0])}
-            />
-            <ImageIcon size={28} />
-            <strong>{watermarkFile ? watermarkFile.name : t.uploader.watermarkImage}</strong>
-            <span>{watermarkFile ? `${formatBytes(watermarkFile.size)} · ${t.uploader.reselect}` : t.uploader.watermarkClick}</span>
-          </label>
+            <label
+              className="upload-zone step-upload"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={onTargetDrop}
+            >
+              <span className="step-badge" aria-hidden="true">②</span>
+              <input
+                accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+                data-upload="targets"
+                multiple
+                type="file"
+                onChange={(event) => handleTargetFiles(event.target.files)}
+              />
+              <Upload size={32} />
+              <strong>{targetItems.length ? `${targetItems.length} ${t.uploader.selected}` : t.uploader.targetImages}</strong>
+              <span>{targetItems.length ? targetItems.map((item) => item.file.name).slice(0, 2).join(" · ") : t.uploader.batchClick}</span>
+            </label>
+          </div>
 
           <div className="settings-group">
             <label>
@@ -1204,7 +1346,7 @@ function WatermarkPage({ tool, navigate, t }) {
               <span>{t.settings.watermarkSize} {scale}%</span>
               <input
                 min="6"
-                max="45"
+                max="100"
                 step="1"
                 type="range"
                 value={scale}
@@ -1285,14 +1427,19 @@ function WatermarkPage({ tool, navigate, t }) {
                 </div>
               )}
               <div className="batch-grid">
-                {targetItems.map((item) => {
+                {targetItems.map((item, index) => {
                   const result = resultById.get(item.id);
                   return (
                     <figure className="batch-card" key={item.id}>
-                      <div className="batch-image">
+                      <button
+                        className="batch-image preview-trigger"
+                        type="button"
+                        onClick={() => setLightboxIndex(index)}
+                        aria-label={t.actions.openPreview}
+                      >
                         <img src={result?.url || item.originalUrl} alt={item.file.name} />
                         <span>{result ? t.settings.result : t.uploader.pending}</span>
-                      </div>
+                      </button>
                       <figcaption>
                         <strong>{item.file.name}</strong>
                         <small>{result ? `${formatBytes(result.size)} · ${result.name}` : formatBytes(item.file.size)}</small>
@@ -1311,12 +1458,21 @@ function WatermarkPage({ tool, navigate, t }) {
           )}
         </div>
       </section>
+      {lightboxIndex !== null && (
+        <ImageLightbox
+          images={lightboxImages}
+          index={Math.min(lightboxIndex, lightboxImages.length - 1)}
+          setIndex={setLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          t={t}
+        />
+      )}
     </main>
   );
 }
 
 export function App() {
-  const [route, navigate] = useHashRoute();
+  const [route, navigate] = usePathRoute();
   const [locale, setLocale] = useState(getInitialLocale);
   const [theme, setTheme] = useState(getInitialTheme);
   const t = messages[locale];
