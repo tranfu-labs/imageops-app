@@ -103,6 +103,7 @@ https://imageops-app.tranfu.com:80
 
 4. 当前版本不需要配置环境变量。
 5. `compose.yml` 没有暴露宿主机公网端口，Coolify/Traefik 会通过 `web:80` 访问应用。
+6. 不需要开启容器级 Healthcheck。如果 Coolify UI 要求填写健康检查路径，可使用 `/healthz`，端口使用 `80`。
 
 ### 其他静态托管平台
 
