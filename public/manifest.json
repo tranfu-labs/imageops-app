@@ -8,17 +8,17 @@
   "theme_color": "#0c63f6",
   "icons": [
     {
-      "src": "/brand/favicon-32x32-20260609-tight.png",
+      "src": "https://imageops-app.tranfu.com/brand/favicon-32x32-20260609-tight.png",
       "sizes": "32x32",
       "type": "image/png"
     },
     {
-      "src": "/brand/apple-touch-icon-20260609-tight.png",
+      "src": "https://imageops-app.tranfu.com/brand/apple-touch-icon-20260609-tight.png",
       "sizes": "180x180",
       "type": "image/png"
     },
     {
-      "src": "/brand/icon-512x512-20260609-tight.png",
+      "src": "https://imageops-app.tranfu.com/brand/icon-512x512-20260609-tight.png",
       "sizes": "512x512",
       "type": "image/png"
     }

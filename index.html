@@ -37,11 +37,36 @@
     <meta name="twitter:image" content="https://imageops-app.tranfu.com/brand/og-image-1200x630-20260609-tight.png" />
 
     <link rel="image_src" href="https://imageops-app.tranfu.com/brand/og-image-1200x630-20260609-tight.png" />
-    <link rel="shortcut icon" href="/brand/favicon-20260609-tight.ico" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/brand/favicon-32x32-20260609-tight.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/brand/apple-touch-icon-20260609-tight.png" />
-    <link rel="apple-touch-icon-precomposed" sizes="180x180" href="/brand/apple-touch-icon-20260609-tight.png" />
-    <link rel="manifest" href="/manifest.json" />
+    <link rel="shortcut icon" href="https://imageops-app.tranfu.com/brand/favicon-20260609-tight.ico" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="https://imageops-app.tranfu.com/brand/favicon-32x32-20260609-tight.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="https://imageops-app.tranfu.com/brand/apple-touch-icon-20260609-tight.png"
+    />
+    <link
+      rel="apple-touch-icon-precomposed"
+      sizes="180x180"
+      href="https://imageops-app.tranfu.com/brand/apple-touch-icon-20260609-tight.png"
+    />
+    <link rel="manifest" href="https://imageops-app.tranfu.com/manifest.json" />
+    <style>
+      .social-preview-fallback {
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: -1;
+        width: 1200px;
+        height: 630px;
+        opacity: 0.01;
+        pointer-events: none;
+      }
+    </style>
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -54,6 +79,17 @@
     </script>
   </head>
   <body>
+    <img
+      class="social-preview-fallback"
+      src="https://imageops-app.tranfu.com/brand/og-image-1200x630-20260609-tight.png"
+      width="1200"
+      height="630"
+      alt="图片助手 ImageOps 分享预览图"
+      loading="eager"
+      fetchpriority="high"
+      decoding="async"
+      aria-hidden="true"
+    />
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

@@ -7,6 +7,19 @@ const root = process.cwd();
 const chromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const port = 9337;
 const baseUrl = "http://127.0.0.1:5173/";
+const productionOrigin = "https://imageops-app.tranfu.com";
+const socialPreview = {
+  title: "图片助手 ImageOps - 面向 Agent 时代的图片处理自动化基础设施",
+  description: "图片助手 ImageOps 是一站式图片处理与自动化工具平台，支持图片压缩、格式转换、清晰度增强、添加水印，并面向 API 与 CLI 自动化能力持续扩展。",
+  canonical: `${productionOrigin}/`,
+  ogDescription: "一站式图片处理与自动化工具平台，支持图片压缩、格式转换、清晰度增强、添加水印。",
+  image: `${productionOrigin}/brand/og-image-1200x630-20260609-tight.png`,
+  favicon: `${productionOrigin}/brand/favicon-20260609-tight.ico`,
+  pngIcon: `${productionOrigin}/brand/favicon-32x32-20260609-tight.png`,
+  appleIcon: `${productionOrigin}/brand/apple-touch-icon-20260609-tight.png`,
+  manifest: `${productionOrigin}/manifest.json`,
+  logo: `${productionOrigin}/brand/icon-512x512-20260609-tight.png`,
+};
 const artifactsDir = path.join(root, "qa-artifacts");
 const profileDir = path.join(root, ".qa-chrome-profile");
 const routePaths = {
@@ -130,6 +143,73 @@ async function navigate(client, url) {
         .filter((image) => image.naturalWidth === 0)
         .map((image) => image.currentSrc || image.src);
       if (broken.length) throw new Error('broken images: ' + broken.join(', '));
+    })()
+  `);
+}
+
+async function verifySocialPreviewHead(client) {
+  return client.evaluate(`
+    (async () => {
+      const expected = ${JSON.stringify(socialPreview)};
+      const failures = [];
+      const attr = (selector, name) => document.querySelector(selector)?.getAttribute(name) || '';
+      const content = (selector) => attr(selector, 'content');
+      const href = (selector) => attr(selector, 'href');
+      const expect = (label, actual, wanted) => {
+        if (actual !== wanted) failures.push(label + ': ' + actual);
+      };
+
+      expect('title', document.querySelector('title')?.textContent || '', expected.title);
+      expect('description', content('meta[name="description"]'), expected.description);
+      expect('canonical', href('link[rel="canonical"]'), expected.canonical);
+      expect('og:url', content('meta[property="og:url"]'), expected.canonical);
+      expect('og:title', content('meta[property="og:title"]'), expected.title);
+      expect('og:description', content('meta[property="og:description"]'), expected.ogDescription);
+      expect('og:image', content('meta[property="og:image"]'), expected.image);
+      expect('og:image:secure_url', content('meta[property="og:image:secure_url"]'), expected.image);
+      expect('og:image:type', content('meta[property="og:image:type"]'), 'image/png');
+      expect('og:image:width', content('meta[property="og:image:width"]'), '1200');
+      expect('og:image:height', content('meta[property="og:image:height"]'), '630');
+      expect('twitter:card', content('meta[name="twitter:card"]'), 'summary_large_image');
+      expect('twitter:title', content('meta[name="twitter:title"]'), expected.title);
+      expect('twitter:description', content('meta[name="twitter:description"]'), expected.ogDescription);
+      expect('twitter:image', content('meta[name="twitter:image"]'), expected.image);
+      expect('image_src', href('link[rel="image_src"]'), expected.image);
+      expect('shortcut icon', href('link[rel="shortcut icon"]'), expected.favicon);
+      expect('png icon', href('link[rel="icon"][sizes="32x32"]'), expected.pngIcon);
+      expect('apple touch icon', href('link[rel="apple-touch-icon"]'), expected.appleIcon);
+      expect('precomposed apple touch icon', href('link[rel="apple-touch-icon-precomposed"]'), expected.appleIcon);
+      expect('manifest', href('link[rel="manifest"]'), expected.manifest);
+
+      const jsonLdText = document.querySelector('script[type="application/ld+json"]')?.textContent || '{}';
+      const jsonLd = JSON.parse(jsonLdText);
+      expect('json-ld logo', jsonLd.logo || '', expected.logo);
+
+      const manifest = await fetch('/manifest.json').then((response) => response.json());
+      const manifestIcons = (manifest.icons || []).map((icon) => icon.src);
+      for (const icon of [expected.pngIcon, expected.appleIcon, expected.logo]) {
+        if (!manifestIcons.includes(icon)) failures.push('manifest icon missing: ' + icon);
+      }
+
+      const fallback = document.body.firstElementChild;
+      if (!fallback || fallback.tagName !== 'IMG' || !fallback.classList.contains('social-preview-fallback')) {
+        failures.push('fallback image is not first body element');
+      } else {
+        expect('fallback src', fallback.currentSrc || fallback.src, expected.image);
+        expect('fallback width attr', fallback.getAttribute('width') || '', '1200');
+        expect('fallback height attr', fallback.getAttribute('height') || '', '630');
+        if (fallback.naturalWidth < 1200 || fallback.naturalHeight < 630) {
+          failures.push('fallback image did not load at 1200x630');
+        }
+      }
+
+      if (failures.length) throw new Error('social preview head failed: ' + failures.join('; '));
+      return {
+        title: document.title,
+        image: content('meta[property="og:image"]'),
+        manifestIconCount: manifestIcons.length,
+        fallbackLoaded: fallback?.naturalWidth === 1200 && fallback?.naturalHeight === 630
+      };
     })()
   `);
 }
@@ -359,6 +439,7 @@ async function main() {
   try {
     client = await createPage(chrome);
     await navigate(client, baseUrl);
+    const socialHead = await verifySocialPreviewHead(client);
     const uiState = await verifyLanguageAndTheme(client);
     await client.screenshot(path.join(artifactsDir, "home.png"));
     const results = [];
@@ -377,8 +458,8 @@ async function main() {
     await navigate(client, baseUrl);
     await client.screenshot(path.join(artifactsDir, "mobile-home.png"));
     await captureComparison(client, path.join(artifactsDir, "home.png"));
-    await writeFile(path.join(artifactsDir, "functional-results.json"), JSON.stringify({ uiState, results }, null, 2));
-    console.log(JSON.stringify({ ok: true, uiState, results, artifactsDir }, null, 2));
+    await writeFile(path.join(artifactsDir, "functional-results.json"), JSON.stringify({ socialHead, uiState, results }, null, 2));
+    console.log(JSON.stringify({ ok: true, socialHead, uiState, results, artifactsDir }, null, 2));
   } finally {
     client?.close();
     chrome.kill("SIGTERM");
