@@ -953,6 +953,113 @@ input[type="range"] {
   gap: 15px;
 }
 
+.watermark-editor {
+  padding: 12px;
+  border: 1px solid var(--soft-line);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.watermark-editor-frame {
+  position: relative;
+  width: min(100%, calc(460px * var(--editor-aspect, 1.5)));
+  max-width: 100%;
+  aspect-ratio: var(--editor-aspect, 1.5);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--soft-line);
+  border-radius: 8px;
+  background: linear-gradient(45deg, #eef2f7 25%, transparent 25%),
+    linear-gradient(-45deg, #eef2f7 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #eef2f7 75%),
+    linear-gradient(-45deg, transparent 75%, #eef2f7 75%);
+  background-color: #fff;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+  line-height: 0;
+  touch-action: none;
+  user-select: none;
+}
+
+.watermark-editor-base {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+.watermark-measure {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.watermark-layer {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(37, 99, 235, 0.86);
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.08);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.86), 0 10px 30px rgba(15, 23, 42, 0.16);
+  cursor: grab;
+  touch-action: none;
+  transform-origin: center;
+  user-select: none;
+}
+
+.watermark-layer:active {
+  cursor: grabbing;
+}
+
+.watermark-layer img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.watermark-rotate-handle,
+.watermark-resize-handle {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--blue);
+  border: 2px solid var(--blue);
+  border-radius: 999px;
+  background: var(--surface-solid);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
+  touch-action: none;
+}
+
+.watermark-rotate-handle {
+  top: 6px;
+  left: 6px;
+  cursor: grab;
+}
+
+.watermark-resize-handle {
+  right: -9px;
+  bottom: -9px;
+  cursor: nwse-resize;
+}
+
+.watermark-rotate-handle:focus-visible,
+.watermark-resize-handle:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--blue) 30%, transparent);
+  outline-offset: 2px;
+}
+
 .watermark-summary {
   display: flex;
   align-items: center;

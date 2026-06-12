@@ -17,6 +17,7 @@ import {
   Monitor,
   Moon,
   RefreshCw,
+  RotateCw,
   ShieldCheck,
   Sparkles,
   Sun,
@@ -44,6 +45,8 @@ const routePaths = {
 };
 
 const routesByPath = Object.fromEntries(Object.entries(routePaths).map(([route, path]) => [path, route]));
+const WATERMARK_MIN_SCALE = 6;
+const WATERMARK_MAX_SCALE = 100;
 
 const toolBase = {
   compress: {
@@ -185,6 +188,7 @@ const messages = {
       strength: "增强强度",
       watermarkOpacity: "水印透明度",
       watermarkSize: "水印大小",
+      watermarkRotation: "水印旋转",
       watermarkPosition: "水印位置",
       original: "原图",
       result: "结果",
@@ -196,6 +200,7 @@ const messages = {
       positionTopRight: "右上角",
       positionTopLeft: "左上角",
       positionCenter: "居中",
+      positionCustom: "自定义",
     },
     toggles: {
       language: "EN",
@@ -303,6 +308,7 @@ const messages = {
       strength: "Enhancement strength",
       watermarkOpacity: "Watermark opacity",
       watermarkSize: "Watermark size",
+      watermarkRotation: "Watermark rotation",
       watermarkPosition: "Watermark position",
       original: "Original",
       result: "Result",
@@ -314,6 +320,7 @@ const messages = {
       positionTopRight: "Top right",
       positionTopLeft: "Top left",
       positionCenter: "Center",
+      positionCustom: "Custom",
     },
     toggles: {
       language: "中文",
@@ -517,6 +524,10 @@ function clamp(value) {
   return Math.max(0, Math.min(255, value));
 }
 
+function clampNumber(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function smoothStep(edge0, edge1, value) {
   const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
@@ -618,6 +629,63 @@ function getWatermarkPosition(position, canvasWidth, canvasHeight, markWidth, ma
   return positions[position] || positions["bottom-right"];
 }
 
+function getWatermarkMargin(canvasWidth, canvasHeight) {
+  return Math.max(16, Math.round(Math.min(canvasWidth, canvasHeight) * 0.035));
+}
+
+function getWatermarkSize(canvasWidth, canvasHeight, watermarkWidth, watermarkHeight, scale, margin) {
+  const safeWidth = Math.max(1, watermarkWidth);
+  const safeHeight = Math.max(1, watermarkHeight);
+  const maxMarkWidth = Math.max(24, canvasWidth - margin * 2);
+  const maxMarkHeight = Math.max(24, canvasHeight - margin * 2);
+  const requestedWidth = Math.max(24, Math.round(maxMarkWidth * (scale / 100)));
+  const requestedHeight = Math.max(24, Math.round(requestedWidth * (safeHeight / safeWidth)));
+  const fitScale = Math.min(1, maxMarkWidth / requestedWidth, maxMarkHeight / requestedHeight);
+  return {
+    width: Math.max(24, Math.round(requestedWidth * fitScale)),
+    height: Math.max(24, Math.round(requestedHeight * fitScale)),
+    maxWidth: maxMarkWidth,
+    maxHeight: maxMarkHeight,
+  };
+}
+
+function getWatermarkCoordinates({
+  position,
+  placement,
+  canvasWidth,
+  canvasHeight,
+  markWidth,
+  markHeight,
+  margin,
+}) {
+  if (placement) {
+    const maxLeft = Math.max(0, canvasWidth - markWidth);
+    const maxTop = Math.max(0, canvasHeight - markHeight);
+    return [
+      clampNumber(Math.round(maxLeft * placement.x), 0, maxLeft),
+      clampNumber(Math.round(maxTop * placement.y), 0, maxTop),
+    ];
+  }
+
+  return getWatermarkPosition(position, canvasWidth, canvasHeight, markWidth, markHeight, margin);
+}
+
+function makeWatermarkPlacement(left, top, canvasWidth, canvasHeight, markWidth, markHeight) {
+  const maxLeft = Math.max(0, canvasWidth - markWidth);
+  const maxTop = Math.max(0, canvasHeight - markHeight);
+  return {
+    x: maxLeft ? clampNumber(left / maxLeft, 0, 1) : 0,
+    y: maxTop ? clampNumber(top / maxTop, 0, 1) : 0,
+  };
+}
+
+function normalizeWatermarkRotation(value) {
+  let next = Number.isFinite(value) ? value : 0;
+  while (next > 180) next -= 360;
+  while (next < -180) next += 360;
+  return Math.round(next);
+}
+
 async function processWatermarkImage({
   file,
   watermarkFile,
@@ -626,6 +694,8 @@ async function processWatermarkImage({
   opacity,
   scale,
   position,
+  placement,
+  rotation = 0,
 }) {
   const [{ image, url }, { image: watermarkImage, url: watermarkUrl }] = await Promise.all([
     loadImage(file),
@@ -644,18 +714,31 @@ async function processWatermarkImage({
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(image, 0, 0, width, height);
 
-  const margin = Math.max(16, Math.round(Math.min(width, height) * 0.035));
-  const maxMarkWidth = Math.max(24, width - margin * 2);
-  const maxMarkHeight = Math.max(24, height - margin * 2);
-  const requestedWidth = Math.max(24, Math.round(maxMarkWidth * (scale / 100)));
-  const requestedHeight = Math.max(24, Math.round(requestedWidth * (watermarkImage.naturalHeight / watermarkImage.naturalWidth)));
-  const fitScale = Math.min(1, maxMarkWidth / requestedWidth, maxMarkHeight / requestedHeight);
-  const markWidth = Math.max(24, Math.round(requestedWidth * fitScale));
-  const markHeight = Math.max(24, Math.round(requestedHeight * fitScale));
-  const [x, y] = getWatermarkPosition(position, width, height, markWidth, markHeight, margin);
+  const margin = getWatermarkMargin(width, height);
+  const { width: markWidth, height: markHeight } = getWatermarkSize(
+    width,
+    height,
+    watermarkImage.naturalWidth,
+    watermarkImage.naturalHeight,
+    scale,
+    margin
+  );
+  const [x, y] = getWatermarkCoordinates({
+    position,
+    placement,
+    canvasWidth: width,
+    canvasHeight: height,
+    markWidth,
+    markHeight,
+    margin,
+  });
 
   ctx.globalAlpha = opacity / 100;
-  ctx.drawImage(watermarkImage, x, y, markWidth, markHeight);
+  ctx.save();
+  ctx.translate(x + markWidth / 2, y + markHeight / 2);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.drawImage(watermarkImage, -markWidth / 2, -markHeight / 2, markWidth, markHeight);
+  ctx.restore();
   ctx.globalAlpha = 1;
 
   URL.revokeObjectURL(url);
@@ -1218,13 +1301,21 @@ function WatermarkPage({ tool, navigate, t }) {
   const [quality, setQuality] = useState(1);
   const [opacity, setOpacity] = useState(60);
   const [scale, setScale] = useState(18);
+  const [rotation, setRotation] = useState(0);
   const [position, setPosition] = useState("bottom-right");
+  const [placement, setPlacement] = useState(null);
+  const [editorImageSize, setEditorImageSize] = useState({ width: 0, height: 0 });
+  const [editorSize, setEditorSize] = useState({ width: 0, height: 0 });
+  const [watermarkNaturalSize, setWatermarkNaturalSize] = useState({ width: 0, height: 0 });
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const editorFrameRef = useRef(null);
+  const dragCleanupRef = useRef(null);
   const watermarkProcessingRef = useRef(false);
   const zipDownloadingRef = useRef(false);
   const Icon = tool.icon;
+  const editorItem = targetItems[0] || null;
 
   useEffect(() => {
     targetItemsRef.current = targetItems;
@@ -1242,7 +1333,38 @@ function WatermarkPage({ tool, navigate, t }) {
     targetItemsRef.current.forEach((item) => URL.revokeObjectURL(item.originalUrl));
     resultsRef.current.forEach((item) => URL.revokeObjectURL(item.url));
     if (watermarkUrlRef.current) URL.revokeObjectURL(watermarkUrlRef.current);
+    dragCleanupRef.current?.();
   }, []);
+
+  useEffect(() => {
+    const node = editorFrameRef.current;
+    if (!node) {
+      setEditorSize({ width: 0, height: 0 });
+      return undefined;
+    }
+
+    let frame = 0;
+    const updateEditorSize = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const rect = node.getBoundingClientRect();
+        setEditorSize((current) => {
+          const next = { width: rect.width, height: rect.height };
+          return Math.abs(current.width - next.width) < 0.5 && Math.abs(current.height - next.height) < 0.5 ? current : next;
+        });
+      });
+    };
+
+    updateEditorSize();
+    const observer = new ResizeObserver(updateEditorSize);
+    observer.observe(node);
+    window.addEventListener("resize", updateEditorSize);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", updateEditorSize);
+    };
+  }, [editorItem?.id, watermarkUrl]);
 
   const clearResults = useCallback(() => {
     results.forEach((item) => URL.revokeObjectURL(item.url));
@@ -1266,6 +1388,7 @@ function WatermarkPage({ tool, navigate, t }) {
     }));
 
     setTargetItems(nextItems);
+    setEditorImageSize({ width: 0, height: 0 });
     setResults([]);
     setStatus("ready");
     setError("");
@@ -1281,10 +1404,149 @@ function WatermarkPage({ tool, navigate, t }) {
     if (watermarkUrl) URL.revokeObjectURL(watermarkUrl);
     setWatermarkFile(nextFile);
     setWatermarkUrl(URL.createObjectURL(nextFile));
+    setWatermarkNaturalSize({ width: 0, height: 0 });
     clearResults();
     setStatus("ready");
     setError("");
   }, [clearResults, t.uploader.invalid, watermarkUrl]);
+
+  const handlePositionChange = useCallback((nextPosition) => {
+    setPosition(nextPosition);
+    if (nextPosition !== "custom") {
+      setPlacement(null);
+    }
+  }, []);
+
+  const editorAspect = editorImageSize.width && editorImageSize.height
+    ? editorImageSize.width / editorImageSize.height
+    : 1.5;
+
+  const editorBox = useMemo(() => {
+    if (!watermarkUrl || !editorSize.width || !editorSize.height || !watermarkNaturalSize.width || !watermarkNaturalSize.height) {
+      return null;
+    }
+
+    const margin = getWatermarkMargin(editorSize.width, editorSize.height);
+    const mark = getWatermarkSize(
+      editorSize.width,
+      editorSize.height,
+      watermarkNaturalSize.width,
+      watermarkNaturalSize.height,
+      scale,
+      margin
+    );
+    const [left, top] = getWatermarkCoordinates({
+      position,
+      placement: position === "custom" ? placement : null,
+      canvasWidth: editorSize.width,
+      canvasHeight: editorSize.height,
+      markWidth: mark.width,
+      markHeight: mark.height,
+      margin,
+    });
+
+    return {
+      left,
+      top,
+      width: mark.width,
+      height: mark.height,
+    };
+  }, [
+    editorSize.height,
+    editorSize.width,
+    placement,
+    position,
+    scale,
+    watermarkNaturalSize.height,
+    watermarkNaturalSize.width,
+    watermarkUrl,
+  ]);
+
+  const beginWatermarkDrag = useCallback((event, type) => {
+    if (!editorBox || !editorFrameRef.current || !watermarkNaturalSize.width || !watermarkNaturalSize.height) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    dragCleanupRef.current?.();
+
+    const frameRect = editorFrameRef.current.getBoundingClientRect();
+    const drag = {
+      type,
+      frameLeft: frameRect.left,
+      frameTop: frameRect.top,
+      frameWidth: frameRect.width,
+      frameHeight: frameRect.height,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: editorBox.left,
+      startTop: editorBox.top,
+      startWidth: editorBox.width,
+      startHeight: editorBox.height,
+      startRotation: rotation,
+      watermarkWidth: watermarkNaturalSize.width,
+      watermarkHeight: watermarkNaturalSize.height,
+    };
+    drag.centerX = drag.frameLeft + drag.startLeft + drag.startWidth / 2;
+    drag.centerY = drag.frameTop + drag.startTop + drag.startHeight / 2;
+    drag.startPointerAngle = Math.atan2(drag.startY - drag.centerY, drag.startX - drag.centerX) * (180 / Math.PI);
+
+    const move = (moveEvent) => {
+      moveEvent.preventDefault();
+      const maxLeft = Math.max(0, drag.frameWidth - drag.startWidth);
+      const maxTop = Math.max(0, drag.frameHeight - drag.startHeight);
+
+      if (drag.type === "rotate") {
+        const currentPointerAngle = Math.atan2(moveEvent.clientY - drag.centerY, moveEvent.clientX - drag.centerX) * (180 / Math.PI);
+        setRotation(normalizeWatermarkRotation(drag.startRotation + currentPointerAngle - drag.startPointerAngle));
+        return;
+      }
+
+      if (drag.type === "move") {
+        const nextLeft = clampNumber(drag.startLeft + moveEvent.clientX - drag.startX, 0, maxLeft);
+        const nextTop = clampNumber(drag.startTop + moveEvent.clientY - drag.startY, 0, maxTop);
+        setPlacement(makeWatermarkPlacement(nextLeft, nextTop, drag.frameWidth, drag.frameHeight, drag.startWidth, drag.startHeight));
+        setPosition("custom");
+        return;
+      }
+
+      const pointerX = clampNumber(moveEvent.clientX - drag.frameLeft, 0, drag.frameWidth);
+      const pointerY = clampNumber(moveEvent.clientY - drag.frameTop, 0, drag.frameHeight);
+      const aspect = drag.startHeight ? drag.startWidth / drag.startHeight : drag.watermarkWidth / drag.watermarkHeight;
+      const widthFromX = pointerX - drag.startLeft;
+      const widthFromY = (pointerY - drag.startTop) * aspect;
+      const desiredWidth = Math.max(widthFromX, widthFromY);
+      const maxByFrame = Math.max(1, Math.min(drag.frameWidth - drag.startLeft, (drag.frameHeight - drag.startTop) * aspect));
+      const nextWidth = clampNumber(desiredWidth, Math.min(24, maxByFrame), maxByFrame);
+      const margin = getWatermarkMargin(drag.frameWidth, drag.frameHeight);
+      const maxMarkWidth = Math.max(24, drag.frameWidth - margin * 2);
+      const nextScale = clampNumber(Math.round((nextWidth / maxMarkWidth) * 100), WATERMARK_MIN_SCALE, WATERMARK_MAX_SCALE);
+      const nextMark = getWatermarkSize(
+        drag.frameWidth,
+        drag.frameHeight,
+        drag.watermarkWidth,
+        drag.watermarkHeight,
+        nextScale,
+        margin
+      );
+      const nextLeft = clampNumber(drag.startLeft, 0, Math.max(0, drag.frameWidth - nextMark.width));
+      const nextTop = clampNumber(drag.startTop, 0, Math.max(0, drag.frameHeight - nextMark.height));
+      setScale(nextScale);
+      setPlacement(makeWatermarkPlacement(nextLeft, nextTop, drag.frameWidth, drag.frameHeight, nextMark.width, nextMark.height));
+      setPosition("custom");
+    };
+
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      dragCleanupRef.current = null;
+    };
+
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    dragCleanupRef.current = stop;
+  }, [editorBox, rotation, watermarkNaturalSize.height, watermarkNaturalSize.width]);
 
   const runWatermark = useCallback(async () => {
     if (watermarkProcessingRef.current) return;
@@ -1312,6 +1574,8 @@ function WatermarkPage({ tool, navigate, t }) {
           opacity,
           scale,
           position,
+          placement: position === "custom" ? placement : null,
+          rotation,
         });
         const base = item.file.name.replace(/\.[^.]+$/, "") || "image";
         nextResults.push({
@@ -1334,9 +1598,11 @@ function WatermarkPage({ tool, navigate, t }) {
   }, [
     opacity,
     outputMime,
+    placement,
     position,
     quality,
     results,
+    rotation,
     scale,
     targetItems,
     tool.outputName,
@@ -1437,12 +1703,13 @@ function WatermarkPage({ tool, navigate, t }) {
           <div className="settings-group">
             <label>
               <span>{t.settings.watermarkPosition}</span>
-              <select value={position} onChange={(event) => setPosition(event.target.value)}>
+              <select value={position} onChange={(event) => handlePositionChange(event.target.value)}>
                 <option value="bottom-right">{t.settings.positionBottomRight}</option>
                 <option value="bottom-left">{t.settings.positionBottomLeft}</option>
                 <option value="top-right">{t.settings.positionTopRight}</option>
                 <option value="top-left">{t.settings.positionTopLeft}</option>
                 <option value="center">{t.settings.positionCenter}</option>
+                {position === "custom" && <option value="custom">{t.settings.positionCustom}</option>}
               </select>
             </label>
             <label>
@@ -1459,12 +1726,23 @@ function WatermarkPage({ tool, navigate, t }) {
             <label>
               <span>{t.settings.watermarkSize} {scale}%</span>
               <input
-                min="6"
-                max="100"
+                min={WATERMARK_MIN_SCALE}
+                max={WATERMARK_MAX_SCALE}
                 step="1"
                 type="range"
                 value={scale}
                 onChange={(event) => setScale(Number(event.target.value))}
+              />
+            </label>
+            <label>
+              <span>{t.settings.watermarkRotation} {rotation}°</span>
+              <input
+                min="-180"
+                max="180"
+                step="1"
+                type="range"
+                value={rotation}
+                onChange={(event) => setRotation(normalizeWatermarkRotation(Number(event.target.value)))}
               />
             </label>
             <label>
@@ -1532,12 +1810,82 @@ function WatermarkPage({ tool, navigate, t }) {
           ) : (
             <div className="batch-preview">
               {watermarkUrl && (
-                <div className="watermark-summary">
-                  <img src={watermarkUrl} alt={t.uploader.watermarkImage} />
-                  <span>
-                    <strong>{t.uploader.watermarkImage}</strong>
-                    <small>{watermarkFile?.name}</small>
-                  </span>
+                <div className="watermark-editor">
+                  <div
+                    className="watermark-editor-frame"
+                    ref={editorFrameRef}
+                    style={{ "--editor-aspect": editorAspect }}
+                  >
+                    <img
+                      className="watermark-editor-base"
+                      src={editorItem.originalUrl}
+                      alt={editorItem.file.name}
+                      draggable="false"
+                      onLoad={(event) => {
+                        const next = {
+                          width: event.currentTarget.naturalWidth,
+                          height: event.currentTarget.naturalHeight,
+                        };
+                        setEditorImageSize((current) => (
+                          current.width === next.width && current.height === next.height ? current : next
+                        ));
+                      }}
+                    />
+                    <img
+                      className="watermark-measure"
+                      src={watermarkUrl}
+                      alt=""
+                      aria-hidden="true"
+                      onLoad={(event) => {
+                        const next = {
+                          width: event.currentTarget.naturalWidth,
+                          height: event.currentTarget.naturalHeight,
+                        };
+                        setWatermarkNaturalSize((current) => (
+                          current.width === next.width && current.height === next.height ? current : next
+                        ));
+                      }}
+                    />
+                    {editorBox && (
+                      <div
+                        aria-label={t.settings.watermarkPosition}
+                        className="watermark-layer"
+                        data-watermark-editor="true"
+                        onPointerDown={(event) => beginWatermarkDrag(event, "move")}
+                        style={{
+                          left: `${editorBox.left}px`,
+                          top: `${editorBox.top}px`,
+                          width: `${editorBox.width}px`,
+                          height: `${editorBox.height}px`,
+                          transform: `rotate(${rotation}deg)`,
+                        }}
+                      >
+                        <img
+                          src={watermarkUrl}
+                          alt={t.uploader.watermarkImage}
+                          draggable="false"
+                          style={{ opacity: opacity / 100 }}
+                        />
+                        <button
+                          aria-label={t.settings.watermarkRotation}
+                          className="watermark-rotate-handle"
+                          data-watermark-rotate="true"
+                          onPointerDown={(event) => beginWatermarkDrag(event, "rotate")}
+                          type="button"
+                        >
+                          <RotateCw size={14} />
+                        </button>
+                        <span
+                          aria-label={t.settings.watermarkSize}
+                          className="watermark-resize-handle"
+                          data-watermark-resize="true"
+                          onPointerDown={(event) => beginWatermarkDrag(event, "resize")}
+                          role="button"
+                          tabIndex={0}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               <div className="batch-grid">

@@ -303,7 +303,112 @@ async function runWatermarkTool(client) {
       watermarkInput.files = watermarkData.files;
       watermarkInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-      await new Promise((resolve) => setTimeout(resolve, 180));
+      let editor = null;
+      let resizeHandle = null;
+      let rotateHandle = null;
+      for (let i = 0; i < 40; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        editor = document.querySelector('[data-watermark-editor="true"]');
+        resizeHandle = document.querySelector('[data-watermark-resize="true"]');
+        rotateHandle = document.querySelector('[data-watermark-rotate="true"]');
+        if (editor && resizeHandle && rotateHandle) break;
+      }
+      if (!editor || !resizeHandle || !rotateHandle) throw new Error('watermark drag editor missing');
+
+      const startRect = editor.getBoundingClientRect();
+      editor.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        buttons: 1,
+        clientX: startRect.left + startRect.width / 2,
+        clientY: startRect.top + startRect.height / 2,
+      }));
+      window.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+        buttons: 1,
+        clientX: startRect.left + startRect.width / 2 - 120,
+        clientY: startRect.top + startRect.height / 2 - 70,
+      }));
+      window.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 1,
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 120));
+
+      const movedRect = editor.getBoundingClientRect();
+      if (startRect.left - movedRect.left < 20 || startRect.top - movedRect.top < 20) {
+        throw new Error('watermark drag did not move editor');
+      }
+
+      resizeHandle = document.querySelector('[data-watermark-resize="true"]');
+      resizeHandle.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 2,
+        buttons: 1,
+        clientX: movedRect.right,
+        clientY: movedRect.bottom,
+      }));
+      window.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 2,
+        buttons: 1,
+        clientX: movedRect.right + 90,
+        clientY: movedRect.bottom + 30,
+      }));
+      window.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 2,
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 120));
+
+      const resizedRect = editor.getBoundingClientRect();
+      if (resizedRect.width - movedRect.width < 10) {
+        throw new Error('watermark resize did not increase editor size');
+      }
+      rotateHandle = document.querySelector('[data-watermark-rotate="true"]');
+      const rotateRect = rotateHandle.getBoundingClientRect();
+      const rotateCenterX = resizedRect.left + resizedRect.width / 2;
+      const rotateCenterY = resizedRect.top + resizedRect.height / 2;
+      rotateHandle.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 3,
+        buttons: 1,
+        clientX: rotateRect.left + rotateRect.width / 2,
+        clientY: rotateRect.top + rotateRect.height / 2,
+      }));
+      window.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 3,
+        buttons: 1,
+        clientX: rotateCenterX + 80,
+        clientY: rotateCenterY - 80,
+      }));
+      window.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true,
+        cancelable: true,
+        pointerId: 3,
+      }));
+      await new Promise((resolve) => setTimeout(resolve, 120));
+
+      const rotatedEditor = document.querySelector('[data-watermark-editor="true"]');
+      const transform = rotatedEditor?.style.transform || '';
+      if (!/rotate\\((-?[1-9]\\d*)deg\\)/.test(transform)) {
+        throw new Error('watermark rotation did not update editor transform: ' + transform);
+      }
+      const positionSelect = Array.from(document.querySelectorAll('.settings-group select'))[0];
+      if (positionSelect?.value !== 'custom') {
+        throw new Error('watermark drag did not switch to custom position');
+      }
+
       const button = document.querySelector('.process-actions .primary');
       if (!button) throw new Error('watermark process button missing');
       button.click();
@@ -343,7 +448,10 @@ async function runWatermarkTool(client) {
             title: document.querySelector('.tool-hero h1')?.textContent || '',
             downloadNames: links.map((link) => link.getAttribute('download') || ''),
             stats: Array.from(document.querySelectorAll('.result-stats strong')).map((node) => node.textContent),
-            resultCount: links.length
+            resultCount: links.length,
+            editorMoved: true,
+            editorResized: true,
+            editorRotated: true
           };
         }
       }
